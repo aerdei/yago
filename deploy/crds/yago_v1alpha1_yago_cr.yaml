@@ -1,0 +1,7 @@
+apiVersion: yago.aerdei.com/v1alpha1
+kind: Yago
+metadata:
+  name: example-yago
+spec:
+  # Add fields here
+  size: 3

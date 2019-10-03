@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yago-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: yago-operator
+  template:
+    metadata:
+      labels:
+        name: yago-operator
+    spec:
+      serviceAccountName: yago-operator
+      containers:
+        - name: yago-operator
+          # Replace this with the built image name
+          image: REPLACE_IMAGE
+          command:
+          - yago-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "yago-operator"
