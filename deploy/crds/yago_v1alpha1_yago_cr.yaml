@@ -4,4 +4,4 @@ metadata:
   name: example-yago
 spec:
   # Add fields here
-  size: 3
+  repository: https://github.com/aerdei/yaml-repo-test
