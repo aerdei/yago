@@ -2,13 +2,18 @@ package yago
 
 import (
 	"context"
+	"io"
 
 	yagov1alpha1 "github.com/aerdei/yago/pkg/apis/yago/v1alpha1"
+	"github.com/aerdei/yago/pkg/controller/gitutils"
+	appsv1 "github.com/openshift/api/apps/v1"
+	buildv1 "github.com/openshift/api/build/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -53,7 +58,23 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner Yago
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	err = c.Watch(&source.Kind{Type: &appsv1.DeploymentConfig{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &yagov1alpha1.Yago{},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &buildv1.BuildConfig{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &yagov1alpha1.Yago{},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &yagov1alpha1.Yago{},
 	})
@@ -99,55 +120,98 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
-
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
-	// Set Yago instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	files, err := gitutils.HandleRepo(instance.Spec.Repository)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
+	for {
+		f, err := files.Next()
+		if err == io.EOF {
+			return reconcile.Result{}, nil
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
 
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
+		cont, err := f.Contents()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		deserializer := serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
+		obj, _, err := deserializer.Decode([]byte(cont), nil, nil)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
 
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
-	}
+		switch obj.(type) {
+		case *appsv1.DeploymentConfig:
+			dc := &appsv1.DeploymentConfig{}
+			_, _, err := deserializer.Decode([]byte(cont), nil, dc)
+			dc.ObjectMeta.Namespace = request.Namespace
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			found := &appsv1.DeploymentConfig{}
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: dc.Name, Namespace: dc.Namespace}, found)
+			if err != nil && errors.IsNotFound(err) {
+				reqLogger.Info("Creating a new dc", "dc.Namespace", dc.Namespace, "dc.Name", dc.Name)
+				if err := controllerutil.SetControllerReference(instance, dc, r.scheme); err != nil {
+					return reconcile.Result{}, err
+				}
+				err = r.client.Create(context.TODO(), dc)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				return reconcile.Result{}, nil
+			} else if err != nil {
+				return reconcile.Result{}, err
+			}
+		case *buildv1.BuildConfig:
+			bc := &buildv1.BuildConfig{}
+			_, _, err := deserializer.Decode([]byte(cont), nil, bc)
+			bc.ObjectMeta.Namespace = request.Namespace
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			found := &buildv1.BuildConfig{}
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: bc.Name, Namespace: bc.Namespace}, found)
+			if err != nil && errors.IsNotFound(err) {
+				reqLogger.Info("Creating a new bc", "bc.Namespace", bc.Namespace, "bc.Name", bc.Name)
+				if err := controllerutil.SetControllerReference(instance, bc, r.scheme); err != nil {
+					return reconcile.Result{}, err
+				}
+				err = r.client.Create(context.TODO(), bc)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				return reconcile.Result{}, nil
+			} else if err != nil {
+				return reconcile.Result{}, err
+			}
+		case *corev1.Service:
+			svc := &corev1.Service{}
+			_, _, err := deserializer.Decode([]byte(cont), nil, svc)
+			svc.ObjectMeta.Namespace = request.Namespace
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			found := &corev1.Service{}
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, found)
+			if err != nil && errors.IsNotFound(err) {
+				reqLogger.Info("Creating a new svc", "svc.Namespace", svc.Namespace, "svc.Name", svc.Name)
+				if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
+					return reconcile.Result{}, err
+				}
+				err = r.client.Create(context.TODO(), svc)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				return reconcile.Result{}, nil
+			} else if err != nil {
+				return reconcile.Result{}, err
+			}
+		default:
+			return reconcile.Result{}, err
+		}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-	return reconcile.Result{}, nil
-}
-
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *yagov1alpha1.Yago) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
 	}
 }
