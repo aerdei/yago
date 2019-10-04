@@ -5,6 +5,7 @@ require (
 	github.com/openshift/api v3.9.0+incompatible
 	github.com/operator-framework/operator-sdk v0.10.1-0.20191001215102-e47857e3a01d
 	github.com/spf13/pflag v1.0.3
+	gopkg.in/src-d/go-git.v4 v4.13.1
 	k8s.io/api v0.0.0-20190612125737-db0771252981
 	k8s.io/apimachinery v0.0.0-20190612125636-6a5db36e93ad
 	k8s.io/client-go v11.0.0+incompatible
