@@ -14,6 +14,7 @@ spec:
     status: {}
   validation:
     openAPIV3Schema:
+      description: Yago is the Schema for the yagos API
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -28,6 +29,7 @@ spec:
         metadata:
           type: object
         spec:
+          description: YagoSpec defines the desired state of Yago
           properties:
             repository:
               description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -39,6 +41,7 @@ spec:
           - repository
           type: object
         status:
+          description: YagoStatus defines the observed state of Yago
           properties:
             currentCommit:
               description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
@@ -49,6 +52,7 @@ spec:
           required:
           - currentCommit
           type: object
+      type: object
   version: v1alpha1
   versions:
   - name: v1alpha1

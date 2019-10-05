@@ -8,6 +8,8 @@ import (
 	"github.com/aerdei/yago/pkg/controller/gitutils"
 	appsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,9 +20,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
@@ -96,6 +98,12 @@ type ReconcileYago struct {
 	scheme *runtime.Scheme
 }
 
+// variable to track last succesful reference
+var lastReference string
+var ref *plumbing.Reference
+var files *object.Tree
+var repoerr error
+
 // Reconcile reads that state of the cluster for a Yago object and makes changes based on the state read
 // and what is in the Yago.Spec
 // TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
@@ -120,13 +128,20 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
-	files, err := gitutils.HandleRepo(instance.Spec.Repository)
-	if err != nil {
-		return reconcile.Result{}, err
+	reqLogger.Info("lastRef: " + lastReference)
+	if lastReference == "" {
+		reqLogger.Info("Cloning repo.")
+		ref, files, repoerr = gitutils.HandleRepo(instance.Spec.Repository)
+		if repoerr != nil {
+			return reconcile.Result{}, err
+		}
 	}
+	filesIter := files.Files()
 	for {
-		f, err := files.Next()
+		f, err := filesIter.Next()
 		if err == io.EOF {
+			lastReference = ref.String()
+			reqLogger.Info("SetLastRef: " + lastReference)
 			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
@@ -212,6 +227,5 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		default:
 			return reconcile.Result{}, err
 		}
-
 	}
 }

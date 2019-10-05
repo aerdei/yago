@@ -22,6 +22,7 @@ func schema_pkg_apis_yago_v1alpha1_Yago(ref common.ReferenceCallback) common.Ope
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "Yago is the Schema for the yagos API",
+				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
 						SchemaProps: spec.SchemaProps{
@@ -65,6 +66,7 @@ func schema_pkg_apis_yago_v1alpha1_YagoSpec(ref common.ReferenceCallback) common
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "YagoSpec defines the desired state of Yago",
+				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"repository": {
 						SchemaProps: spec.SchemaProps{
@@ -77,7 +79,6 @@ func schema_pkg_apis_yago_v1alpha1_YagoSpec(ref common.ReferenceCallback) common
 				Required: []string{"repository"},
 			},
 		},
-		Dependencies: []string{},
 	}
 }
 
@@ -86,6 +87,7 @@ func schema_pkg_apis_yago_v1alpha1_YagoStatus(ref common.ReferenceCallback) comm
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "YagoStatus defines the observed state of Yago",
+				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"currentCommit": {
 						SchemaProps: spec.SchemaProps{
@@ -98,6 +100,5 @@ func schema_pkg_apis_yago_v1alpha1_YagoStatus(ref common.ReferenceCallback) comm
 				Required: []string{"currentCommit"},
 			},
 		},
-		Dependencies: []string{},
 	}
 }
