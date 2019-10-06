@@ -99,10 +99,10 @@ type ReconcileYago struct {
 }
 
 // variable to track last succesful reference
-var lastReference string
 var ref *plumbing.Reference
 var files *object.Tree
 var repoerr error
+var lock bool = false
 
 // Reconcile reads that state of the cluster for a Yago object and makes changes based on the state read
 // and what is in the Yago.Spec
@@ -128,8 +128,7 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
-	reqLogger.Info("lastRef: " + lastReference)
-	if lastReference == "" {
+	if files == nil {
 		reqLogger.Info("Cloning repo.")
 		ref, files, repoerr = gitutils.HandleRepo(instance.Spec.Repository)
 		if repoerr != nil {
@@ -140,8 +139,7 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 	for {
 		f, err := filesIter.Next()
 		if err == io.EOF {
-			lastReference = ref.String()
-			reqLogger.Info("SetLastRef: " + lastReference)
+			reqLogger.Info("End of list.")
 			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
@@ -166,14 +164,12 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 				return reconcile.Result{}, err
 			}
 			found := &appsv1.DeploymentConfig{}
-			err = r.client.Get(context.TODO(), types.NamespacedName{Name: dc.Name, Namespace: dc.Namespace}, found)
-			if err != nil && errors.IsNotFound(err) {
+			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: dc.Name, Namespace: dc.Namespace}, found); err != nil && errors.IsNotFound(err) {
 				reqLogger.Info("Creating a new dc", "dc.Namespace", dc.Namespace, "dc.Name", dc.Name)
 				if err := controllerutil.SetControllerReference(instance, dc, r.scheme); err != nil {
 					return reconcile.Result{}, err
 				}
-				err = r.client.Create(context.TODO(), dc)
-				if err != nil {
+				if err := r.client.Create(context.TODO(), dc, client.DryRunAll); err != nil {
 					return reconcile.Result{}, err
 				}
 				return reconcile.Result{}, nil
@@ -188,14 +184,12 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 				return reconcile.Result{}, err
 			}
 			found := &buildv1.BuildConfig{}
-			err = r.client.Get(context.TODO(), types.NamespacedName{Name: bc.Name, Namespace: bc.Namespace}, found)
-			if err != nil && errors.IsNotFound(err) {
+			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: bc.Name, Namespace: bc.Namespace}, found); err != nil && errors.IsNotFound(err) {
 				reqLogger.Info("Creating a new bc", "bc.Namespace", bc.Namespace, "bc.Name", bc.Name)
 				if err := controllerutil.SetControllerReference(instance, bc, r.scheme); err != nil {
 					return reconcile.Result{}, err
 				}
-				err = r.client.Create(context.TODO(), bc)
-				if err != nil {
+				if err := r.client.Create(context.TODO(), bc, client.DryRunAll); err != nil {
 					return reconcile.Result{}, err
 				}
 				return reconcile.Result{}, nil
@@ -210,14 +204,12 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 				return reconcile.Result{}, err
 			}
 			found := &corev1.Service{}
-			err = r.client.Get(context.TODO(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, found)
-			if err != nil && errors.IsNotFound(err) {
+			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, found); err != nil && errors.IsNotFound(err) {
 				reqLogger.Info("Creating a new svc", "svc.Namespace", svc.Namespace, "svc.Name", svc.Name)
 				if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
 					return reconcile.Result{}, err
 				}
-				err = r.client.Create(context.TODO(), svc)
-				if err != nil {
+				if err := r.client.Create(context.TODO(), svc, client.DryRunAll); err != nil {
 					return reconcile.Result{}, err
 				}
 				return reconcile.Result{}, nil
