@@ -12,16 +12,20 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -53,13 +57,20 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to primary resource Yago
-	err = c.Watch(&source.Kind{Type: &yagov1alpha1.Yago{}}, &handler.EnqueueRequestForObject{})
+	err = c.Watch(
+		&source.Kind{Type: &yagov1alpha1.Yago{}},
+		&handler.EnqueueRequestForObject{},
+		predicate.Funcs{
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				// Ignore updates to CR status in which case metadata.Generation does not change
+				return e.MetaOld.GetGeneration() != e.MetaNew.GetGeneration()
+			},
+		})
 	if err != nil {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner Yago
+	// Watch for changes to secondary resource DC,BC,Svc and requeue the owner Yago
 	err = c.Watch(&source.Kind{Type: &appsv1.DeploymentConfig{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &yagov1alpha1.Yago{},
@@ -99,16 +110,14 @@ type ReconcileYago struct {
 }
 
 // variable to track last succesful reference
-var ref *plumbing.Reference
-var files *object.Tree
-var repoerr error
-var lock bool = false
+var (
+	ref          *plumbing.Reference
+	files        *object.Tree
+	deserializer = serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
+)
 
 // Reconcile reads that state of the cluster for a Yago object and makes changes based on the state read
 // and what is in the Yago.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
-// Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, error) {
@@ -129,9 +138,9 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 	if files == nil {
-		reqLogger.Info("Cloning repo.")
-		ref, files, repoerr = gitutils.HandleRepo(instance.Spec.Repository)
-		if repoerr != nil {
+		reqLogger.Info("Cloning repo")
+		ref, files, err = gitutils.HandleRepo(instance.Spec.Repository)
+		if err != nil {
 			return reconcile.Result{}, err
 		}
 	}
@@ -139,7 +148,11 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 	for {
 		f, err := filesIter.Next()
 		if err == io.EOF {
-			reqLogger.Info("End of list.")
+			reqLogger.Info("End of list")
+			instance.Status.CurrentCommit = ref.String()
+			if err := r.client.Status().Update(context.TODO(), instance); err != nil {
+				return reconcile.Result{}, err
+			}
 			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
@@ -149,75 +162,34 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-		deserializer := serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
-		obj, _, err := deserializer.Decode([]byte(cont), nil, nil)
+
+		unst := &unstructured.Unstructured{}
+
+		_, gvk, err := deserializer.Decode([]byte(cont), nil, unst)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
 
-		switch obj.(type) {
-		case *appsv1.DeploymentConfig:
-			dc := &appsv1.DeploymentConfig{}
-			_, _, err := deserializer.Decode([]byte(cont), nil, dc)
-			dc.ObjectMeta.Namespace = request.Namespace
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			found := &appsv1.DeploymentConfig{}
-			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: dc.Name, Namespace: dc.Namespace}, found); err != nil && errors.IsNotFound(err) {
-				reqLogger.Info("Creating a new dc", "dc.Namespace", dc.Namespace, "dc.Name", dc.Name)
-				if err := controllerutil.SetControllerReference(instance, dc, r.scheme); err != nil {
-					return reconcile.Result{}, err
-				}
-				if err := r.client.Create(context.TODO(), dc, client.DryRunAll); err != nil {
-					return reconcile.Result{}, err
-				}
-				return reconcile.Result{}, nil
-			} else if err != nil {
-				return reconcile.Result{}, err
-			}
-		case *buildv1.BuildConfig:
-			bc := &buildv1.BuildConfig{}
-			_, _, err := deserializer.Decode([]byte(cont), nil, bc)
-			bc.ObjectMeta.Namespace = request.Namespace
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			found := &buildv1.BuildConfig{}
-			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: bc.Name, Namespace: bc.Namespace}, found); err != nil && errors.IsNotFound(err) {
-				reqLogger.Info("Creating a new bc", "bc.Namespace", bc.Namespace, "bc.Name", bc.Name)
-				if err := controllerutil.SetControllerReference(instance, bc, r.scheme); err != nil {
-					return reconcile.Result{}, err
-				}
-				if err := r.client.Create(context.TODO(), bc, client.DryRunAll); err != nil {
-					return reconcile.Result{}, err
-				}
-				return reconcile.Result{}, nil
-			} else if err != nil {
-				return reconcile.Result{}, err
-			}
-		case *corev1.Service:
-			svc := &corev1.Service{}
-			_, _, err := deserializer.Decode([]byte(cont), nil, svc)
-			svc.ObjectMeta.Namespace = request.Namespace
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			found := &corev1.Service{}
-			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, found); err != nil && errors.IsNotFound(err) {
-				reqLogger.Info("Creating a new svc", "svc.Namespace", svc.Namespace, "svc.Name", svc.Name)
-				if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
-					return reconcile.Result{}, err
-				}
-				if err := r.client.Create(context.TODO(), svc, client.DryRunAll); err != nil {
-					return reconcile.Result{}, err
-				}
-				return reconcile.Result{}, nil
-			} else if err != nil {
-				return reconcile.Result{}, err
-			}
-		default:
+		name, isNameFound, err := unstructured.NestedString(unst.UnstructuredContent(), "metadata", "name")
+		if !isNameFound {
 			return reconcile.Result{}, err
 		}
+
+		found := &unstructured.Unstructured{}
+		found.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind})
+
+		if err := r.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: request.Namespace}, found); err != nil && errors.IsNotFound(err) {
+			unstructured.SetNestedField(unst.Object, request.Namespace, "metadata", "namespace")
+			if err := controllerutil.SetControllerReference(instance, unst, r.scheme); err != nil {
+				return reconcile.Result{}, err
+			}
+			if err := r.client.Create(context.TODO(), unst); err != nil {
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{}, nil
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+
 	}
 }
