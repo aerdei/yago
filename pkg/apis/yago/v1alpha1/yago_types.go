@@ -14,6 +14,8 @@ type YagoSpec struct {
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
 	Repository string `json:"repository"`
+	// +optional
+	BranchReference string `json:"branchReference"`
 }
 
 // YagoStatus defines the observed state of Yago

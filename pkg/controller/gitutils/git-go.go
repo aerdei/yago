@@ -1,16 +1,17 @@
 package gitutils
 
 import (
+	"strings"
+
 	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
-	//oapi "github.com/openshift/api"
 )
 
-//HandleRepo returns a slice of objects from a repo, if all are handled.
-func HandleRepo(str string) (*plumbing.Reference, *object.Tree, error) {
-	r, err := cloneRepo(str)
+//HandleRepo returns a ref, object tree, if all are handled. Error otherwise
+func HandleRepo(url string, branch string) (*plumbing.Reference, *object.Tree, error) {
+	r, err := cloneRepo(url, branch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -29,9 +30,16 @@ func HandleRepo(str string) (*plumbing.Reference, *object.Tree, error) {
 	return ref, tree, err
 }
 
-func cloneRepo(url string) (*git.Repository, error) {
+func cloneRepo(url string, branch string) (*git.Repository, error) {
+	var refName plumbing.ReferenceName
+	if strings.ToLower(branch) == "master" {
+		refName = plumbing.Master
+	} else {
+		refName = plumbing.NewBranchReferenceName(branch)
+	}
 	r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
-		URL: url,
+		URL:           url,
+		ReferenceName: refName,
 	})
 	return r, err
 }

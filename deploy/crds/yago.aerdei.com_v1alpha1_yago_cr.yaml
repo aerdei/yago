@@ -5,3 +5,4 @@ metadata:
 spec:
   # Add fields here
   repository: https://github.com/aerdei/yaml-repo-test
+  branchReference: "Master"

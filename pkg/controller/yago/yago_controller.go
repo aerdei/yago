@@ -3,6 +3,7 @@ package yago
 import (
 	"context"
 	"io"
+	"reflect"
 
 	yagov1alpha1 "github.com/aerdei/yago/pkg/apis/yago/v1alpha1"
 	"github.com/aerdei/yago/pkg/controller/gitutils"
@@ -62,8 +63,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		&handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				// Ignore updates to CR status in which case metadata.Generation does not change
-				return e.MetaOld.GetGeneration() != e.MetaNew.GetGeneration()
+				// Ignore updates to CR that are not changing spec
+				unOld := &unstructured.Unstructured{}
+				unOld.Object, _ = runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectOld)
+				unNew := &unstructured.Unstructured{}
+				unNew.Object, _ = runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectNew)
+				unOldSpec, _, _ := unstructured.NestedStringMap(unOld.UnstructuredContent(), "spec")
+				unNewSpec, _, _ := unstructured.NestedStringMap(unNew.UnstructuredContent(), "spec")
+				return !reflect.DeepEqual(unOldSpec, unNewSpec)
 			},
 		})
 	if err != nil {
@@ -111,9 +118,10 @@ type ReconcileYago struct {
 
 // variable to track last succesful reference
 var (
-	ref          *plumbing.Reference
-	files        *object.Tree
-	deserializer = serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
+	ref           *plumbing.Reference
+	files         *object.Tree
+	deserializer  = serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
+	currentBranch string
 )
 
 // Reconcile reads that state of the cluster for a Yago object and makes changes based on the state read
@@ -137,9 +145,12 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
-	if files == nil {
+	if files == nil || instance.Spec.BranchReference != currentBranch {
 		reqLogger.Info("Cloning repo")
-		ref, files, err = gitutils.HandleRepo(instance.Spec.Repository)
+		if instance.Spec.BranchReference == "" {
+			instance.Spec.BranchReference = "Master"
+		}
+		ref, files, err = gitutils.HandleRepo(instance.Spec.Repository, instance.Spec.BranchReference)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -150,6 +161,7 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		if err == io.EOF {
 			reqLogger.Info("End of list")
 			instance.Status.CurrentCommit = ref.String()
+			currentBranch = instance.Spec.BranchReference
 			if err := r.client.Status().Update(context.TODO(), instance); err != nil {
 				return reconcile.Result{}, err
 			}

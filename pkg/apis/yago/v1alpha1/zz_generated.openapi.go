@@ -75,6 +75,12 @@ func schema_pkg_apis_yago_v1alpha1_YagoSpec(ref common.ReferenceCallback) common
 							Format:      "",
 						},
 					},
+					"branchReference": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
 				},
 				Required: []string{"repository"},
 			},
