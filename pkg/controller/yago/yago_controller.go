@@ -3,10 +3,10 @@ package yago
 import (
 	"context"
 	"io"
-	"reflect"
 
 	yagov1alpha1 "github.com/aerdei/yago/pkg/apis/yago/v1alpha1"
 	"github.com/aerdei/yago/pkg/controller/gitutils"
+	"github.com/google/go-cmp/cmp"
 	appsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -70,7 +70,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 				unNew.Object, _ = runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectNew)
 				unOldSpec, _, _ := unstructured.NestedStringMap(unOld.UnstructuredContent(), "spec")
 				unNewSpec, _, _ := unstructured.NestedStringMap(unNew.UnstructuredContent(), "spec")
-				return !reflect.DeepEqual(unOldSpec, unNewSpec)
+				return !cmp.Equal(unOldSpec, unNewSpec)
 			},
 		})
 	if err != nil {
@@ -189,8 +189,8 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 
 		found := &unstructured.Unstructured{}
 		found.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind})
-
-		if err := r.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: request.Namespace}, found); err != nil && errors.IsNotFound(err) {
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: request.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
 			unstructured.SetNestedField(unst.Object, request.Namespace, "metadata", "namespace")
 			if err := controllerutil.SetControllerReference(instance, unst, r.scheme); err != nil {
 				return reconcile.Result{}, err
@@ -201,7 +201,15 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
+		} else {
+			if cmp.Equal(found.Object["spec"], unst.Object["spec"]) {
+				return reconcile.Result{}, nil
+			}
+			found.Object["spec"] = unst.Object["spec"]
+			if err := r.client.Update(context.TODO(), found); err != nil {
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{}, nil
 		}
-
 	}
 }
