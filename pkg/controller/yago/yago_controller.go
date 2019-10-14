@@ -2,6 +2,7 @@ package yago
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 
 	yagov1alpha1 "github.com/aerdei/yago/pkg/apis/yago/v1alpha1"
@@ -198,18 +199,23 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 			if err := r.client.Create(context.TODO(), unst); err != nil {
 				return reconcile.Result{}, err
 			}
-			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
 		} else {
-			if cmp.Equal(found.Object["spec"], unst.Object["spec"]) {
-				return reconcile.Result{}, nil
+			if !cmp.Equal(found.Object["spec"], unst.Object["spec"]) {
+				reqLogger.Info("Merging")
+				patch := found
+				patch.Object["spec"] = unst.Object["spec"]
+				marshalledPatch, err := json.Marshal(patch)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				constPatch := client.ConstantPatch(types.MergePatchType, marshalledPatch)
+				if err := r.client.Patch(context.TODO(), found.DeepCopy(), constPatch); err != nil {
+					return reconcile.Result{}, err
+				}
+
 			}
-			found.Object["spec"] = unst.Object["spec"]
-			if err := r.client.Update(context.TODO(), found); err != nil {
-				return reconcile.Result{}, err
-			}
-			return reconcile.Result{}, nil
 		}
 	}
 }
