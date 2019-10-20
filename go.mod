@@ -2,6 +2,7 @@ module github.com/aerdei/yago
 
 require (
 	github.com/coreos/prometheus-operator v0.31.1 // indirect
+	github.com/go-logr/logr v0.1.0
 	github.com/go-openapi/spec v0.17.2
 	github.com/google/go-cmp v0.3.0
 	github.com/openshift/api v3.9.0+incompatible
