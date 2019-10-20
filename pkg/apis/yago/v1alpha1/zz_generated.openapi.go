@@ -81,8 +81,14 @@ func schema_pkg_apis_yago_v1alpha1_YagoSpec(ref common.ReferenceCallback) common
 							Format: "",
 						},
 					},
+					"forceUpdate": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"boolean"},
+							Format: "",
+						},
+					},
 				},
-				Required: []string{"repository"},
+				Required: []string{"repository", "forceUpdate"},
 			},
 		},
 	}
