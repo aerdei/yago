@@ -87,10 +87,10 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="2.8284272"
-     inkscape:cx="153.91514"
+     inkscape:cx="42.369048"
      inkscape:cy="93.474285"
      inkscape:document-units="mm"
-     inkscape:current-layer="layer3"
+     inkscape:current-layer="layer9"
      showgrid="true"
      inkscape:window-width="1920"
      inkscape:window-height="1016"
@@ -124,10 +124,11 @@
      transform="translate(0,17)"
      style="display:inline">
     <path
-       style="fill:#5491fa;fill-opacity:1;stroke:none;stroke-width:0.26499999;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="M 12.99038,-6.5000048 30.310889,-16.500006 47.631397,-6.5000048 56.291651,8.4999944 V 18.499995 H 47.631397 V 33.499994 L 30.310889,43.499995 12.99038,33.499994 V 18.499995 H 4.3301259 V 8.4999944 Z"
+       style="fill:#5491fa;fill-opacity:1;stroke:none;stroke-width:0.64999998;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       d="m 12.99038,-6.5000048 17.32051,3.8e-6 17.320507,-3.8e-6 8.660254,14.9999992 V 18.499995 h -8.660254 v 14.999999 l -17.320507,6e-6 -17.32051,-6e-6 V 18.499995 H 4.3301259 V 8.4999944 Z"
        id="path887"
-       inkscape:connector-curvature="0" />
+       inkscape:connector-curvature="0"
+       sodipodi:nodetypes="ccccccccccccc" />
   </g>
   <g
      inkscape:groupmode="layer"
