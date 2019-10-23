@@ -235,14 +235,10 @@ func (r *ReconcileYago) mergeObjects(
 		return reconcile.Result{}, err
 	}
 
-	patch := found
-	patch.Object["spec"] = unst.Object["spec"]
-	marshalledPatch, err := json.Marshal(patch)
+	constPatch, err := createSpecPatch(found, unst)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	constPatch := client.ConstantPatch(types.MergePatchType, marshalledPatch)
-
 	//Try to patch object
 	if err := r.client.Patch(context.TODO(), found.DeepCopy(), constPatch); err != nil {
 		//If object cannot be patched, and it's because it has immutable fields, recreate object
@@ -277,4 +273,14 @@ func (r *ReconcileYago) mergeObjects(
 		reqLogger.Info("ForceUpdate is false")
 	}
 	return reconcile.Result{}, err
+}
+
+func createSpecPatch(found *unstructured.Unstructured, unst *unstructured.Unstructured) (client.Patch, error) {
+	patch := found
+	patch.Object["spec"] = unst.Object["spec"]
+	marshalledPatch, err := json.Marshal(patch)
+	if err != nil {
+		return nil, err
+	}
+	return client.ConstantPatch(types.MergePatchType, marshalledPatch), nil
 }
