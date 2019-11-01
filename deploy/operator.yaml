@@ -16,9 +16,9 @@ spec:
       containers:
         - name: yago-operator
           # Replace this with the built image name
-          image: REPLACE_IMAGE
+          image: quay.io/aerdei-redhat.com/yago:v0.0.1
           command:
-          - yago-operator
+          - yago
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -30,4 +30,4 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
-              value: "yago-operator"
+              value: "yago"
