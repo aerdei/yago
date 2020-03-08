@@ -2,11 +2,15 @@ package yago
 
 import (
 	"context"
+	"encoding/json"
 	"io"
-	"reflect"
+	"strings"
+	"time"
 
 	yagov1alpha1 "github.com/aerdei/yago/pkg/apis/yago/v1alpha1"
 	"github.com/aerdei/yago/pkg/controller/gitutils"
+	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
 	appsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -18,7 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/kubectl/pkg/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -64,13 +69,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		predicate.Funcs{
 			UpdateFunc: func(e event.UpdateEvent) bool {
 				// Ignore updates to CR that are not changing spec
-				unOld := &unstructured.Unstructured{}
-				unOld.Object, _ = runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectOld)
-				unNew := &unstructured.Unstructured{}
-				unNew.Object, _ = runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectNew)
-				unOldSpec, _, _ := unstructured.NestedStringMap(unOld.UnstructuredContent(), "spec")
-				unNewSpec, _, _ := unstructured.NestedStringMap(unNew.UnstructuredContent(), "spec")
-				return !reflect.DeepEqual(unOldSpec, unNewSpec)
+				log.Info("Checking update event")
+				unOld, err := runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectOld)
+				if err != nil {
+					return false
+				}
+				unNew, err := runtime.DefaultUnstructuredConverter.ToUnstructured(e.ObjectNew)
+				if err != nil {
+					return false
+				}
+				return !cmp.Equal(unOld["spec"], unNew["spec"])
 			},
 		})
 	if err != nil {
@@ -122,6 +130,8 @@ var (
 	files         *object.Tree
 	deserializer  = serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
 	currentBranch string
+	retryInterval = time.Second * 5
+	timeout       = time.Second * 60
 )
 
 // Reconcile reads that state of the cluster for a Yago object and makes changes based on the state read
@@ -190,7 +200,8 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 		found := &unstructured.Unstructured{}
 		found.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind})
 
-		if err := r.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: request.Namespace}, found); err != nil && errors.IsNotFound(err) {
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: request.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
 			unstructured.SetNestedField(unst.Object, request.Namespace, "metadata", "namespace")
 			if err := controllerutil.SetControllerReference(instance, unst, r.scheme); err != nil {
 				return reconcile.Result{}, err
@@ -198,10 +209,78 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 			if err := r.client.Create(context.TODO(), unst); err != nil {
 				return reconcile.Result{}, err
 			}
-			return reconcile.Result{}, nil
 		} else if err != nil {
 			return reconcile.Result{}, err
+		} else if !cmp.Equal(found.Object["spec"], unst.Object["spec"]) {
+			if result, err := r.mergeObjects(&request, unst, found, instance.Spec.ForceUpdate, reqLogger); err != nil {
+				return result, err
+			}
 		}
-
 	}
+}
+
+func (r *ReconcileYago) mergeObjects(
+	request *reconcile.Request,
+	unst *unstructured.Unstructured,
+	found *unstructured.Unstructured,
+	forceUpdate bool,
+	reqLogger logr.Logger) (reconcile.Result, error) {
+
+	reqLogger.Info("Merging")
+
+	unstructured.SetNestedField(unst.Object, request.Namespace, "metadata", "namespace")
+
+	name, isNameFound, err := unstructured.NestedString(unst.UnstructuredContent(), "metadata", "name")
+	if !isNameFound {
+		return reconcile.Result{}, err
+	}
+
+	constPatch, err := createSpecPatch(found, unst)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	//Try to patch object
+	if err := r.client.Patch(context.TODO(), found.DeepCopy(), constPatch); err != nil {
+		//If object cannot be patched, and it's because it has immutable fields, recreate object
+		if err.(*errors.StatusError).ErrStatus.Code == 422 &&
+			strings.Contains(err.(*errors.StatusError).ErrStatus.Message, "immutable") &&
+			forceUpdate {
+			reqLogger.Info("ForceUpdate is true")
+			//Delete object
+			if err := r.client.Delete(context.TODO(), found); err != nil {
+				return reconcile.Result{}, err
+			}
+			//Wait for object to be deleted
+			if err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+				getErr := r.client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: request.Namespace}, found)
+				if getErr != nil {
+					if errors.IsNotFound(getErr) {
+						return true, nil
+					}
+					return false, getErr
+				}
+				return false, nil
+			}); err != nil {
+				return reconcile.Result{}, err
+			}
+			//Create object again
+			reqLogger.Info("Merge-recreate")
+			if err := r.client.Create(context.TODO(), unst); err != nil {
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{}, nil
+		}
+		reqLogger.Info("ForceUpdate is false")
+	}
+	return reconcile.Result{}, err
+}
+
+func createSpecPatch(found *unstructured.Unstructured, unst *unstructured.Unstructured) (client.Patch, error) {
+	patch := found
+	patch.Object["spec"] = unst.Object["spec"]
+	marshalledPatch, err := json.Marshal(patch)
+	if err != nil {
+		return nil, err
+	}
+	return client.ConstantPatch(types.MergePatchType, marshalledPatch), nil
 }
