@@ -3,17 +3,11 @@ module github.com/aerdei/yago
 go 1.13
 
 require (
-	github.com/cosiner/argv v0.0.1 // indirect
-	github.com/go-delve/delve v1.4.0 // indirect
-	github.com/mattn/go-colorable v0.1.6 // indirect
-	github.com/mattn/go-runewidth v0.0.8 // indirect
+	github.com/go-logr/logr v0.1.0
+	github.com/google/go-cmp v0.3.1
 	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
 	github.com/operator-framework/operator-sdk v0.15.2
-	github.com/peterh/liner v1.2.0 // indirect
-	github.com/spf13/cobra v0.0.6 // indirect
 	github.com/spf13/pflag v1.0.5
-	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
-	golang.org/x/arch v0.0.0-20191126211547-368ea8f32fff // indirect
 	golang.org/x/sys v0.0.0-20200302150141-5c8b2ff67527 // indirect
 	gopkg.in/src-d/go-git.v4 v4.13.1
 	gopkg.in/yaml.v2 v2.2.8 // indirect
