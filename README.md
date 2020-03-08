@@ -18,12 +18,31 @@ The following basic features are currently under development:
 - Error reporting
 - Cleanup of orphaned objects
 
-Yago is currently tested and developed under OpenShift 3.11.
+Yago is currently tested and developed under OpenShift 4.3.
 
-## Install
-Create SA, Role, Rolebinding, CRD
-## Usage
+## Prerequisites  
+* docker/podman
+* [operator-sdk v0.15.2](https://github.com/operator-framework/operator-sdk/releases/tag/v0.15.2)
 
+## Build
+```bash 
+cd yago
+operator-sdk build <image-repo>:<tag> [--image-builder podman] [--verbose]  
+{podman|docker} push <image-repo>:<tag>
+```
+
+## Deploy
+```bash 
+cd yago
+oc create -f deploy/service_account.yaml
+oc create -f deploy/role.yaml
+oc create -f deploy/rolebinding.yaml
+oc create -f deploy/crds/yago.aerdei.com_yagos_crd.yaml
+sed -i 's/REPLACE_IMAGE/<image-repo>:<tag>/g' deploy/operator.yaml
+oc create -f deploy/operator.yaml
+```
+
+## Use
 Create a Yago CR:
 ```bash
 oc create -f - <<EOF
