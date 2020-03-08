@@ -8,7 +8,6 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // YagoSpec defines the desired state of Yago
-// +k8s:openapi-gen=true
 type YagoSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
@@ -19,7 +18,6 @@ type YagoSpec struct {
 }
 
 // YagoStatus defines the observed state of Yago
-// +k8s:openapi-gen=true
 type YagoStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
@@ -30,7 +28,6 @@ type YagoStatus struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // Yago is the Schema for the yagos API
-// +k8s:openapi-gen=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=yagos,scope=Namespaced
 type Yago struct {
