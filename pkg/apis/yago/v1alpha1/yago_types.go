@@ -15,6 +15,7 @@ type YagoSpec struct {
 	Repository string `json:"repository"`
 	// +optional
 	BranchReference string `json:"branchReference"`
+	ForceUpdate     bool   `json:"forceUpdate"`
 }
 
 // YagoStatus defines the observed state of Yago
