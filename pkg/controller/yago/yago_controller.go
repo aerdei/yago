@@ -11,11 +11,8 @@ import (
 	"github.com/aerdei/yago/pkg/controller/gitutils"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
-	appsv1 "github.com/openshift/api/apps/v1"
-	buildv1 "github.com/openshift/api/build/v1"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,6 +34,7 @@ import (
 )
 
 var log = logf.Log.WithName("controller_yago")
+var c controller.Controller
 
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
@@ -57,7 +55,8 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("yago-controller", mgr, controller.Options{Reconciler: r})
+	var err error
+	c, err = controller.New("yago-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
@@ -81,31 +80,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 				return !cmp.Equal(unOld["spec"], unNew["spec"])
 			},
 		})
-	if err != nil {
-		return err
-	}
-
-	// Watch for changes to secondary resource DC,BC,Svc and requeue the owner Yago
-	err = c.Watch(&source.Kind{Type: &appsv1.DeploymentConfig{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &yagov1alpha1.Yago{},
-	})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &buildv1.BuildConfig{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &yagov1alpha1.Yago{},
-	})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &yagov1alpha1.Yago{},
-	})
 	if err != nil {
 		return err
 	}
@@ -141,7 +115,6 @@ var (
 func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling Yago")
-
 	// Fetch the Yago instance
 	instance := &yagov1alpha1.Yago{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
@@ -209,6 +182,10 @@ func (r *ReconcileYago) Reconcile(request reconcile.Request) (reconcile.Result, 
 			if err := r.client.Create(context.TODO(), unst); err != nil {
 				return reconcile.Result{}, err
 			}
+			c.Watch(&source.Kind{Type: found}, &handler.EnqueueRequestForOwner{
+				IsController: true,
+				OwnerType:    &yagov1alpha1.Yago{},
+			})
 		} else if err != nil {
 			return reconcile.Result{}, err
 		} else if !cmp.Equal(found.Object["spec"], unst.Object["spec"]) {
